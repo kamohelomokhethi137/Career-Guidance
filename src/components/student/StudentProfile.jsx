@@ -7,7 +7,7 @@ import {
   FaEdit, FaSave, FaTimes, FaCamera,
 } from "react-icons/fa";
 import { ToastContainer, toast } from "react-toastify";
-import api from "../../api/api"; // <-- NEW: Auto-token API
+import api from "../api/Api"; 
 
 import StudentSidebar from "../../components/student/Sidebar";
 import StudentTopNav from "../../components/student/TopNav";

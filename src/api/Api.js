@@ -2,11 +2,11 @@
 import axios from "axios";
 import { auth } from "../firebase";
 
-const api = axios.create({
+const Api = axios.create({
   baseURL: import.meta.env.VITE_BACKEND_URL || "http://localhost:5000",
 });
 
-api.interceptors.request.use(async (config) => {
+Api.interceptors.request.use(async (config) => {
   const user = auth.currentUser;
   if (user) {
     const token = await user.getIdToken();
@@ -15,7 +15,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-api.interceptors.response.use(
+Api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
@@ -26,4 +26,4 @@ api.interceptors.response.use(
   }
 );
 
-export default api;
+export default Api;

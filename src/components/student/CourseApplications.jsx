@@ -1,132 +1,183 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaSearch, FaGraduationCap, FaMapMarkerAlt, FaClock, FaCheck, FaExclamationTriangle } from 'react-icons/fa';
+import { FaSearch, FaGraduationCap, FaCheck, FaExclamationTriangle } from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
+import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
 import StudentSidebar from '../../components/student/Sidebar';
 import StudentTopNav from '../../components/student/TopNav';
 
-const mockCourses = [
-  {
-    id: 1,
-    title: 'BSc Computer Science',
-    institution: 'Limkokwing University',
-    location: 'Maseru',
-    duration: '4 years',
-    requirements: 'Math & Science with minimum B grade',
-    deadline: '2024-03-15',
-    applied: false,
-    qualification: 'High School Diploma'
-  },
-  {
-    id: 2,
-    title: 'Diploma in Information Technology',
-    institution: 'Lesotho College',
-    location: 'Maseru',
-    duration: '2 years',
-    requirements: 'Math with minimum C grade',
-    deadline: '2024-03-20',
-    applied: false,
-    qualification: 'High School Diploma'
-  },
-  {
-    id: 3,
-    title: 'BSc Business Information Technology',
-    institution: 'National University of Lesotho',
-    location: 'Roma',
-    duration: '4 years',
-    requirements: 'Math & English with minimum B grade',
-    deadline: '2024-03-25',
-    applied: false,
-    qualification: 'High School Diploma'
-  }
-];
-
 export default function CourseApplications() {
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const studentName = user.name || 'User';
-
+  const [user, setUser] = useState(null);
+  const [uid, setUid] = useState(null);
+  const [studentName, setStudentName] = useState('Student');
   const [searchTerm, setSearchTerm] = useState('');
+  const [courses, setCourses] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [showApplicationForm, setShowApplicationForm] = useState(false);
-  const [selectedCourse, setSelectedCourse] = useState(null);
-  const [institutionApplications, setInstitutionApplications] = useState({});
+  const [institutionCount, setInstitutionCount] = useState({});
+  const [loadingId, setLoadingId] = useState(null);
 
-  // Track applications per institution
+  // ── Load user from localStorage and react to changes ─────────────────────────
   useEffect(() => {
-    const institutionCount = {};
-    applications.forEach(app => {
-      institutionCount[app.institution] = (institutionCount[app.institution] || 0) + 1;
-    });
-    setInstitutionApplications(institutionCount);
-  }, [applications]);
-
-  const filteredCourses = mockCourses.filter(course =>
-    course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    course.institution.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleApply = (course) => {
-    const currentApplications = institutionApplications[course.institution] || 0;
-
-    if (currentApplications >= 2) {
-      toast.error(`You can only apply to max 2 courses per institution. Already applied: ${currentApplications}`);
-      return;
-    }
-
-    const alreadyApplied = applications.find(app => 
-      app.courseId === course.id && app.institution === course.institution
-    );
-
-    if (alreadyApplied) {
-      toast.warning('You have already applied to this course.');
-      return;
-    }
-
-    setSelectedCourse(course);
-    setShowApplicationForm(true);
-  };
-
-  const submitApplication = (applicationData) => {
-    const newApplication = {
-      id: Date.now(),
-      courseId: selectedCourse.id,
-      title: selectedCourse.title,
-      institution: selectedCourse.institution,
-      appliedDate: new Date().toISOString(),
-      status: 'pending',
-      ...applicationData
+    const loadUser = () => {
+      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      if (storedUser) {
+        setUser(storedUser);
+        setStudentName(storedUser.fullName || storedUser.name || 'Student');
+        setUid(localStorage.getItem('uid'));
+      } else {
+        setUser(null);
+        setStudentName('Student');
+        setUid(null);
+      }
     };
 
-    setApplications([...applications, newApplication]);
+    loadUser();
 
-    const updatedCourses = mockCourses.map(course =>
-      course.id === selectedCourse.id ? { ...course, applied: true } : course
+    // Listen for login/logout events in the same tab
+    window.addEventListener('userUpdated', loadUser);
+
+    // Listen for localStorage changes in other tabs
+    const storageHandler = (e) => {
+      if (e.key === 'user') loadUser();
+    };
+    window.addEventListener('storage', storageHandler);
+
+    return () => {
+      window.removeEventListener('userUpdated', loadUser);
+      window.removeEventListener('storage', storageHandler);
+    };
+  }, []);
+
+  // ── Load courses ─────────────────────────────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'courses'), snap =>
+      setCourses(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
+    return () => unsub();
+  }, []);
 
-    setShowApplicationForm(false);
-    setSelectedCourse(null);
-    toast.success(`Application submitted for ${selectedCourse.title} at ${selectedCourse.institution}!`);
+  // ── Load student applications ───────────────────────────
+  useEffect(() => {
+    if (!uid) return;
+
+    const appsQuery = query(collection(db, 'applications'), where('studentId', '==', uid));
+    const unsub = onSnapshot(appsQuery, snap => {
+      const userApps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setApplications(userApps);
+
+      // Count per institution
+      const count = {};
+      userApps.forEach(app => {
+        if (app.institute) count[app.institute] = (count[app.institute] || 0) + 1;
+      });
+      setInstitutionCount(count);
+
+      // Show notifications for status changes
+      userApps.forEach(app => {
+        if (app.status === 'approved') {
+          toast.success(`🎉 Congratulations! Your application for ${courses.find(c => c.id === app.courseId)?.name || 'a course'} has been approved!`);
+        } else if (app.status === 'rejected') {
+          toast.error(`❌ Your application for ${courses.find(c => c.id === app.courseId)?.name || 'a course'} has been rejected.`);
+        }
+      });
+    });
+
+    return () => unsub();
+  }, [uid, courses]);
+
+  // ── Filter courses ───────────────────────────────────────
+  const filteredCourses = courses.filter(c =>
+    c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.faculty?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // ── Direct Apply ────────────────────────────────────────
+  const handleApply = async (course) => {
+    if (!uid) return toast.error('User not logged in');
+    if (!course?.instituteId) return toast.error('Course data incomplete');
+
+    const appsAtInstitution = institutionCount[course.instituteId] || 0;
+    if (appsAtInstitution >= 2) return toast.error(`Max 2 courses per institution. You have ${appsAtInstitution}`);
+    if (applications.some(a => a.courseId === course.id)) return toast.warning('Already applied');
+
+    setLoadingId(course.id);
+
+    try {
+      await addDoc(collection(db, 'applications'), {
+        studentId: uid,
+        courseId: course.id,
+        institute: course.instituteId,
+        status: 'pending',
+        appliedAt: serverTimestamp(),
+      });
+
+      toast.success(`Applied to ${course.name}!`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to apply. Try again.');
+    } finally {
+      setLoadingId(null);
+    }
   };
 
-  const getApplicationStatus = (course) => {
-    const application = applications.find(app => app.courseId === course.id);
-    return application ? application.status : null;
+  // ── Get application status text and style ─────────────────
+  const getStatusInfo = (status) => {
+    switch (status) {
+      case 'approved':
+        return { 
+          text: 'Approved ✅', 
+          class: 'bg-green-900 text-green-400',
+          badgeClass: 'bg-green-900 text-green-400 border border-green-700'
+        };
+      case 'rejected':
+        return { 
+          text: 'Rejected ❌', 
+          class: 'bg-red-900 text-red-400',
+          badgeClass: 'bg-red-900 text-red-400 border border-red-700'
+        };
+      case 'pending':
+        return { 
+          text: 'Pending ⏳', 
+          class: 'bg-yellow-900 text-yellow-400',
+          badgeClass: 'bg-yellow-900 text-yellow-400 border border-yellow-700'
+        };
+      default:
+        return { 
+          text: 'Applied', 
+          class: 'bg-gray-800 text-gray-400',
+          badgeClass: 'bg-gray-800 text-gray-400 border border-gray-700'
+        };
+    }
   };
+
+  // ── Render ─────────────────────────────────────────────
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center bg-gray-900 p-16 rounded-3xl">
+          <h1 className="text-5xl font-bold mb-6">User Not Logged In</h1>
+          <p className="text-2xl mb-8">Please log in to apply for courses</p>
+          <a href="/login" className="bg-white text-black px-12 py-5 rounded-xl text-2xl font-bold">Login</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-black min-h-screen text-white flex flex-col md:flex-row">
       <StudentSidebar />
-
       <div className="flex-1 md:ml-64">
         <StudentTopNav studentName={studentName} />
-
         <main className="pt-20 px-4 md:px-8 lg:px-12 space-y-6">
+
+          {/* Header */}
           <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
             <h1 className="text-2xl md:text-3xl font-bold mb-2 text-white">Course Applications</h1>
             <p className="text-white/70">
-              Browse available courses and apply to up to 2 programs per institution.
+              Browse courses and apply to up to 2 programs per institution.
             </p>
-            <div className="mt-4 flex items-center space-x-4 text-sm">
+            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
               <div className="flex items-center space-x-2 text-green-400">
                 <FaCheck />
                 <span>{applications.length} Applications Submitted</span>
@@ -135,164 +186,105 @@ export default function CourseApplications() {
                 <FaExclamationTriangle />
                 <span>Max 2 courses per institution</span>
               </div>
+              {applications.some(app => app.status === 'approved') && (
+                <div className="flex items-center space-x-2 text-green-400">
+                  <FaCheck />
+                  <span>You have approved applications! 🎉</span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
-            <div className="relative">
-              <FaSearch className="absolute left-3 top-3 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search courses or institutions..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+          {/* Search */}
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 relative">
+            <FaSearch className="absolute left-11 top-10 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search courses or faculties..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
 
+          {/* Courses Grid */}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCourses.map((course, index) => {
-              const applicationStatus = getApplicationStatus(course);
-              const applicationsAtInstitution = institutionApplications[course.institution] || 0;
-              const canApply = applicationsAtInstitution < 2;
+            {filteredCourses.map(course => {
+              const application = applications.find(a => a.courseId === course.id);
+              const applied = !!application;
+              const status = application?.status;
+              const statusInfo = getStatusInfo(status);
+              const canApply = (institutionCount[course.instituteId] || 0) < 2;
+              const isLoading = loadingId === course.id;
 
               return (
                 <motion.div
                   key={course.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="bg-gray-900 rounded-2xl border border-gray-800 p-6 hover:border-gray-600 transition-colors"
+                  className={`bg-gray-900 rounded-2xl border p-6 transition-colors ${
+                    status === 'approved' 
+                      ? 'border-green-800 hover:border-green-600' 
+                      : status === 'rejected'
+                      ? 'border-red-800 hover:border-red-600'
+                      : 'border-gray-800 hover:border-gray-600'
+                  }`}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <FaGraduationCap className="text-2xl text-blue-400" />
-                    {applicationStatus && (
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        applicationStatus === 'accepted' ? 'bg-green-900 text-green-400' :
-                        applicationStatus === 'rejected' ? 'bg-red-900 text-red-400' :
-                        'bg-yellow-900 text-yellow-400'
-                      }`}>
-                        {applicationStatus}
+                    {status && (
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusInfo.badgeClass}`}>
+                        {statusInfo.text}
                       </span>
                     )}
                   </div>
-                  
-                  <h3 className="text-lg font-semibold text-white mb-2">{course.title}</h3>
-                  <p className="text-blue-400 font-medium mb-3">{course.institution}</p>
-                  
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center text-sm text-gray-400">
-                      <FaMapMarkerAlt className="mr-2" />
-                      {course.location}
-                    </div>
-                    <div className="flex items-center text-sm text-gray-400">
-                      <FaClock className="mr-2" />
-                      {course.duration}
-                    </div>
-                  </div>
-                  
-                  <p className="text-sm text-gray-400 mb-2">
-                    <strong className="text-white">Requirements:</strong> {course.requirements}
-                  </p>
-                  
-                  <p className="text-sm text-gray-500 mb-4">
-                    Application deadline: {new Date(course.deadline).toLocaleDateString()}
-                  </p>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">
-                      {applicationsAtInstitution}/2 applications at this institution
-                    </span>
-                    <button
-                      onClick={() => handleApply(course)}
-                      disabled={!canApply || applicationStatus}
-                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
-                        applicationStatus
-                          ? 'bg-gray-800 text-gray-400 cursor-not-allowed'
-                          : !canApply
-                          ? 'bg-red-900 text-red-400 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {applicationStatus ? 'Applied' : !canApply ? 'Limit Reached' : 'Apply Now'}
-                    </button>
-                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-1">{course.name}</h3>
+                  <p className="text-gray-300 text-sm mb-2">Faculty: {course.faculty}</p>
+                  <p className="text-gray-300 text-sm mb-2">Duration: {course.duration}</p>
+                  <p className="text-gray-300 text-sm mb-4">Intake: {course.intake}</p>
+
+                  <button
+                    onClick={() => handleApply(course)}
+                    disabled={applied || !canApply || isLoading}
+                    className={`w-full px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+                      applied
+                        ? statusInfo.class
+                        : !canApply
+                        ? 'bg-red-900 text-red-400 cursor-not-allowed'
+                        : isLoading
+                        ? 'bg-blue-700 text-white cursor-wait'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {isLoading
+                      ? 'Applying...'
+                      : applied
+                      ? statusInfo.text
+                      : !canApply
+                      ? 'Limit Reached'
+                      : 'Apply Now'}
+                  </button>
+
+                  {/* Status message for approved/rejected */}
+                  {status === 'approved' && (
+                    <p className="text-green-400 text-xs mt-2 text-center">
+                      Congratulations! Your application has been approved.
+                    </p>
+                  )}
+                  {status === 'rejected' && (
+                    <p className="text-red-400 text-xs mt-2 text-center">
+                      Your application has been rejected.
+                    </p>
+                  )}
                 </motion.div>
               );
             })}
           </div>
 
-          {showApplicationForm && (
-            <ApplicationForm
-              course={selectedCourse}
-              onSubmit={submitApplication}
-              onCancel={() => setShowApplicationForm(false)}
-            />
-          )}
         </main>
-
         <ToastContainer position="top-right" />
       </div>
-    </div>
-  );
-}
-
-function ApplicationForm({ course, onSubmit, onCancel }) {
-  const [formData, setFormData] = useState({
-    personalStatement: '',
-    supportingDocuments: []
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.personalStatement.trim()) {
-      toast.error('Please provide a personal statement');
-      return;
-    }
-    onSubmit(formData);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-gray-900 rounded-2xl p-6 max-w-md w-full border border-gray-700"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">Apply to {course.title}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Personal Statement
-            </label>
-            <textarea
-              required
-              rows={4}
-              value={formData.personalStatement}
-              onChange={(e) => setFormData({...formData, personalStatement: e.target.value})}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Explain why you're interested in this course and why you're a good fit..."
-            />
-          </div>
-          
-          <div className="flex space-x-3">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 py-2 px-4 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-800 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Submit Application
-            </button>
-          </div>
-        </form>
-      </motion.div>
     </div>
   );
 }

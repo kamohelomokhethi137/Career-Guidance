@@ -1,8 +1,46 @@
-// src/components/admin/TopNav.jsx
+import { useState, useEffect } from "react";
 import { FaSearch, FaBell } from "react-icons/fa";
 import { motion } from "framer-motion";
 
-const TopNav = ({ adminName = "Admin" }) => {
+const TopNav = () => {
+  const [userName, setUserName] = useState("Admin");
+  const [userInitial, setUserInitial] = useState("A");
+
+  useEffect(() => {
+    const loadUser = () => {
+      try {
+        // Get user data from localStorage (set by your login system)
+        const userData = JSON.parse(localStorage.getItem("user") || "{}");
+        const role = localStorage.getItem("role");
+        
+        // Use fullName from login response, fallback to email or "Admin"
+        const name = userData.fullName || userData.name || userData.email || "Admin";
+        
+        setUserName(name);
+        setUserInitial(name.charAt(0).toUpperCase());
+        
+        // Dispatch event for other components to listen to
+        window.dispatchEvent(new Event("userUpdated"));
+      } catch (error) {
+        console.error("Error loading user data:", error);
+        setUserName("Admin");
+        setUserInitial("A");
+      }
+    };
+
+    // Load immediately
+    loadUser();
+
+    // Listen for storage changes (other tabs) and login events
+    window.addEventListener("storage", loadUser);
+    window.addEventListener("userUpdated", loadUser);
+
+    return () => {
+      window.removeEventListener("storage", loadUser);
+      window.removeEventListener("userUpdated", loadUser);
+    };
+  }, []);
+
   return (
     <motion.header
       initial={{ y: -50 }}
@@ -28,9 +66,9 @@ const TopNav = ({ adminName = "Admin" }) => {
         </button>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-            A
+            {userInitial}
           </div>
-          <span className="hidden sm:block font-medium">{adminName}</span>
+          <span className="hidden sm:block font-medium">{userName}</span>
         </div>
       </div>
     </motion.header>

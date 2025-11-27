@@ -5,7 +5,6 @@ import { FaEnvelopeOpenText, FaCheckCircle, FaSpinner } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { auth } from "../../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import axios from "axios";
 import AuthLayout from "./AuthLayout";
 
 export default function VerifyEmail() {
@@ -21,17 +20,19 @@ export default function VerifyEmail() {
 
   const queryParams = new URLSearchParams(location.search);
   const email = queryParams.get("email");
-  const role = queryParams.get("role") || "student";
+  const role = queryParams.get("role"); // No fallback; must come from query
 
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
-  // Track Firebase Auth state
+  // === Handle Firebase Auth state ===
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        // Reload to get fresh emailVerified status
+        await currentUser.reload();
         if (currentUser.emailVerified && !hasRedirected.current) {
-          await onVerifiedDetected(currentUser);
+          handleVerified();
         }
       }
     });
@@ -39,7 +40,7 @@ export default function VerifyEmail() {
     return () => unsubscribe();
   }, []);
 
-  // Poll backend for verification (fallback)
+  // === Polling fallback ===
   useEffect(() => {
     if (!email || hasRedirected.current) return;
 
@@ -51,7 +52,16 @@ export default function VerifyEmail() {
 
       setIsChecking(true);
       try {
-        const resp = await fetch(`${BACKEND_URL}/check-verification`, {
+        const currentUser = auth.currentUser;
+        if (currentUser) await currentUser.reload();
+
+        if (currentUser?.emailVerified && !hasRedirected.current) {
+          handleVerified();
+          return;
+        }
+
+        // Backend fallback
+        const resp = await fetch(`${BACKEND_URL}/auth/check-verification`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email }),
@@ -59,79 +69,36 @@ export default function VerifyEmail() {
 
         if (resp.ok) {
           const json = await resp.json();
-          if (json.verified && !hasRedirected.current) {
-            // Force reload Firebase user
-            const freshUser = await auth.currentUser?.reload().then(() => auth.currentUser);
-            if (freshUser) {
-              await onVerifiedDetected(freshUser);
-            }
-          }
+          if (json.verified && !hasRedirected.current) handleVerified();
         }
       } catch (err) {
-        console.warn("Backend verification check failed:", err);
+        console.warn("Verification check failed:", err);
       } finally {
         setIsChecking(false);
       }
     }, 3000);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => clearInterval(intervalRef.current);
   }, [email]);
 
-  // === MAIN: Save user data + redirect ===
-  const onVerifiedDetected = async (firebaseUser) => {
+  // === Verified handler ===
+  const handleVerified = () => {
     if (hasRedirected.current) return;
     hasRedirected.current = true;
 
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    clearInterval(intervalRef.current);
 
-    // 1. Get fresh token
-    let token = "";
-    try {
-      token = await firebaseUser.getIdToken();
-    } catch (err) {
-      console.error("Failed to get ID token", err);
-    }
-
-    // 2. Get full profile from backend
-    let fullName = firebaseUser.displayName || "";
-    try {
-      const resp = await axios.get(`${BACKEND_URL}/users/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      fullName = resp.data.fullName || fullName;
-    } catch (err) {
-      console.warn("Could not fetch profile name, using displayName");
-    }
-
-    // 3. Save everything to localStorage
-    const userData = {
-      email: firebaseUser.email,
-      fullName: fullName || firebaseUser.email.split("@")[0],
-      uid: firebaseUser.uid,
-    };
-
-    localStorage.setItem("user", JSON.stringify(userData));
-    localStorage.setItem("role", role);
-    localStorage.setItem("uid", firebaseUser.uid);
-    localStorage.setItem("token", token);
-
-    // 4. Success toast
-    toast.success(`Email verified! Welcome, ${userData.fullName}!`, {
+    toast.success("Email verified successfully! Redirecting to login...", {
       autoClose: 1800,
     });
 
-    // 5. Redirect
-    setTimeout(() => {
-      navigate(`/${role}/dashboard`, { replace: true });
-    }, 1500);
+    setTimeout(() => navigate("/login", { replace: true }), 1500);
   };
 
   // === Resend Verification Email ===
   const handleResendVerification = async () => {
-    if (!email) {
-      toast.error("Email is required to resend the verification link.");
+    if (!email || !role) {
+      toast.error("Email and role are required to resend the verification link.");
       return;
     }
 
@@ -139,7 +106,7 @@ export default function VerifyEmail() {
     const loadingToastId = toast.loading("Sending verification email...");
 
     try {
-      const resp = await fetch(`${BACKEND_URL}/resend-verification`, {
+      const resp = await fetch(`${BACKEND_URL}/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, role }),

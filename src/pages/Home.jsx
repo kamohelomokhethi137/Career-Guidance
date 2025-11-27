@@ -94,7 +94,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* STATS – Subtle & Classy */}
+      {/* STATS – Subtle & Classy
       <section className="py-20 bg-gray-50">
         <div className="max-w-5xl mx-auto px-6">
           <div className="grid grid-cols-3 gap-10 text-center">
@@ -116,7 +116,7 @@ export default function Home() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* FINAL CTA – Clean Contrast */}
       <section className="py-32 bg-black text-white">

@@ -27,9 +27,9 @@ export default function Navbar() {
 
           {/* Logo - Bold & Clean */}
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center group-hover:bg-gray-800 transition">
+            {/* <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center group-hover:bg-gray-800 transition">
               <FaGraduationCap className="text-white text-xl" />
-            </div>
+            </div> */}
             <div>
               <span className="font-black text-xl tracking-tight">CareerGuide</span>
               <span className="block text-xs text-gray-500 font-medium">Lesotho</span>

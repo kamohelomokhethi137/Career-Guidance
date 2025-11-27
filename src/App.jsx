@@ -21,7 +21,7 @@ import Profile from "./components/student/StudentProfile";
 import InstituteDashboard from "./pages/institute/InstituteDashboard";
 import InstituteProfile from "./components/institute/InstituteProfile";
 import ManageFaculties from "./components/institute/ManageFaculties";
-import ManageCourses from "./components/institute/ManageCourses";
+import ManageApplications from "./components/institute/ManageApplications";
 import StudentApplications from "./components/institute/StudentApplications";
 import PublishAdmissions from "./components/institute/PublishAdmissions";
 
@@ -63,7 +63,7 @@ function App() {
         <Route path="/institute/dashboard" element={<InstituteDashboard />} />
         <Route path="/institute/profile" element={<InstituteProfile />} />
         <Route path="/institute/faculties" element={<ManageFaculties />} />
-        <Route path="/institute/courses" element={<ManageCourses />} />
+        <Route path="/institute/courses" element={<ManageApplications />} />
         <Route path="/institute/applications" element={<StudentApplications />} />
         <Route path="/institute/admissions" element={<PublishAdmissions />} />
 

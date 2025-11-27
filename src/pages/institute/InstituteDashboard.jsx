@@ -7,11 +7,11 @@ import {
   FaCheckCircle,
   FaClock,
   FaCalendar,
-  FaBuilding,
   FaBookOpen,
   FaTimesCircle,
   FaPaperPlane,
   FaSpinner,
+  FaUniversity,
 } from "react-icons/fa";
 import InstituteSidebar from "../../components/institute/Sidebar";
 import InstituteTopNav from "../../components/institute/TopNav";
@@ -22,8 +22,6 @@ import {
   query,
   where,
   onSnapshot,
-  orderBy,
-  limit,
 } from "firebase/firestore";
 
 const StatCard = ({ stat }) => {
@@ -61,30 +59,9 @@ const ActivityItem = ({ item }) => {
   );
 };
 
-const DeadlineItem = ({ deadline }) => (
-  <div className="flex items-center justify-between p-3 rounded-lg bg-gray-900 border border-gray-800">
-    <div>
-      <p className="text-sm font-medium text-white">{deadline.title}</p>
-      <p className="text-xs text-gray-400">
-        Due: {new Date(deadline.date).toLocaleDateString()}
-      </p>
-    </div>
-    <div className="text-right">
-      <p
-        className={`text-sm font-bold ${
-          deadline.daysLeft <= 3 ? "text-red-400" : "text-yellow-400"
-        }`}
-      >
-        {deadline.daysLeft} days left
-      </p>
-    </div>
-  </div>
-);
-
 const InstituteDashboard = () => {
   const [stats, setStats] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
-  const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
   const [instituteName, setInstituteName] = useState("Institute");
   const [loading, setLoading] = useState(true);
   const [instituteId, setInstituteId] = useState(null);
@@ -101,10 +78,10 @@ const InstituteDashboard = () => {
       return;
     }
 
-    // Real-time applications listener
+    // Real-time student applications listener
     const appsQuery = query(
-      collection(db, "applications"),
-      where("institute", "==", storedId)
+      collection(db, "studentApplications"),
+      where("instituteId", "==", storedId)
     );
 
     const unsubscribeApps = onSnapshot(appsQuery, (snapshot) => {
@@ -113,7 +90,6 @@ const InstituteDashboard = () => {
         
         const total = apps.length;
         const approved = apps.filter((a) => a.status === "approved").length;
-        const admitted = apps.filter((a) => a.status === "admitted").length;
         const pending = apps.filter((a) => a.status === "pending").length;
         const rejected = apps.filter((a) => a.status === "rejected").length;
 
@@ -132,15 +108,7 @@ const InstituteDashboard = () => {
             icon: FaCheckCircle,
             color: "text-green-400",
             bg: "bg-green-900",
-            link: "/institute/applications?filter=approved",
-          },
-          {
-            label: "Admitted",
-            value: admitted,
-            icon: FaUsers,
-            color: "text-purple-400",
-            bg: "bg-purple-900",
-            link: "/institute/admissions",
+            link: "/institute/applications",
           },
           {
             label: "Pending Review",
@@ -148,7 +116,15 @@ const InstituteDashboard = () => {
             icon: FaClock,
             color: "text-yellow-400",
             bg: "bg-yellow-900",
-            link: "/institute/applications?filter=pending",
+            link: "/institute/applications",
+          },
+          {
+            label: "Rejected",
+            value: rejected,
+            icon: FaTimesCircle,
+            color: "text-red-400",
+            bg: "bg-red-900",
+            link: "/institute/applications",
           },
         ]);
 
@@ -157,25 +133,21 @@ const InstituteDashboard = () => {
           .sort((a, b) => (b.appliedAt?.toDate?.() || 0) - (a.appliedAt?.toDate?.() || 0))
           .slice(0, 5);
 
-        const activity = recentApps.map((app, index) => {
+        const activity = recentApps.map((app) => {
           let message = "";
           let icon = FaPaperPlane;
           let color = "text-blue-400";
 
           if (app.status === 'approved') {
-            message = `Application approved for ${app.courseName || 'course'}`;
+            message = `Application approved for ${app.programTitle || 'program'}`;
             icon = FaCheckCircle;
             color = "text-green-400";
-          } else if (app.status === 'admitted') {
-            message = `Student admitted to ${app.courseName || 'course'}`;
-            icon = FaUsers;
-            color = "text-purple-400";
           } else if (app.status === 'rejected') {
-            message = `Application rejected for ${app.courseName || 'course'}`;
+            message = `Application rejected for ${app.programTitle || 'program'}`;
             icon = FaTimesCircle;
             color = "text-red-400";
           } else {
-            message = `New application received for ${app.courseName || 'course'}`;
+            message = `New application from ${app.studentName} for ${app.programTitle || 'program'}`;
             icon = FaPaperPlane;
             color = "text-blue-400";
           }
@@ -190,70 +162,46 @@ const InstituteDashboard = () => {
         });
 
         setRecentActivity(activity);
-        setLoading(false);
       } catch (error) {
         console.error("Error processing applications:", error);
         toast.error("Failed to load applications data.");
-        setLoading(false);
       }
     }, (error) => {
       console.error("Firestore error:", error);
       toast.error("Failed to load applications.");
-      setLoading(false);
     });
 
-    // Load courses count
-    const coursesQuery = query(
-      collection(db, "courses"),
+    // Load university applications count (programs published by institute)
+    const universityAppsQuery = query(
+      collection(db, "universityApplications"),
       where("instituteId", "==", storedId)
     );
 
-    const unsubscribeCourses = onSnapshot(coursesQuery, (snapshot) => {
-      const coursesCount = snapshot.size;
+    const unsubscribeUniversityApps = onSnapshot(universityAppsQuery, (snapshot) => {
+      const programsCount = snapshot.size;
       
-      // Update stats with courses count
+      // Update stats with programs count
       setStats(prev => {
-        const filtered = prev.filter(stat => stat.label !== "Courses");
+        const filtered = prev.filter(stat => stat.label !== "Programs Published");
         return [
           ...filtered,
           {
-            label: "Courses",
-            value: coursesCount,
-            icon: FaBookOpen,
+            label: "Programs Published",
+            value: programsCount,
+            icon: FaUniversity,
             color: "text-indigo-400",
             bg: "bg-indigo-900",
-            link: "/institute/courses",
+            link: "/institute/applications",
           }
         ];
       });
+      
+      setLoading(false);
     });
-
-    // Mock deadlines (you can replace this with real deadlines from your database)
-    const mockDeadlines = [
-      {
-        id: 1,
-        title: "Application Period Ends",
-        date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        daysLeft: 7
-      },
-      {
-        id: 2,
-        title: "Admission Decisions Due",
-        date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-        daysLeft: 14
-      },
-      {
-        id: 3,
-        title: "Semester Starts",
-        date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        daysLeft: 30
-      }
-    ];
-    setUpcomingDeadlines(mockDeadlines);
 
     return () => {
       unsubscribeApps();
-      unsubscribeCourses();
+      unsubscribeUniversityApps();
     };
   }, []);
 
@@ -295,7 +243,7 @@ const InstituteDashboard = () => {
               Welcome, {instituteName}!
             </h1>
             <p className="text-white/70 text-sm md:text-base">
-              Manage applications, publish results, and track your institution's progress.
+              Manage student applications and track your institution's programs.
             </p>
           </div>
 
@@ -332,53 +280,25 @@ const InstituteDashboard = () => {
               </div>
             </div>
 
-            {/* Upcoming Deadlines */}
+            {/* Quick Actions */}
             <div className="space-y-3">
               <h2 className="text-lg font-semibold flex items-center gap-2">
-                <FaCalendar className="text-gray-400" /> Upcoming Deadlines
+                <FaCalendar className="text-gray-400" /> Quick Actions
               </h2>
-              <div className="space-y-2">
-                {upcomingDeadlines.length > 0 ? (
-                  upcomingDeadlines.map((d) => (
-                    <DeadlineItem key={d.id} deadline={d} />
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-gray-500">
-                    No upcoming deadlines
+              <div className="grid grid-cols-1 gap-3">
+                <Link to="/institute/applications" className="block">
+                  <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
+                    <FaFileAlt className="mx-auto text-2xl mb-2" />
+                    <p className="text-sm font-medium">Manage Applications</p>
                   </div>
-                )}
+                </Link>
+                <Link to="/institute/manage-applications" className="block">
+                  <div className="bg-gradient-to-br from-green-600 to-green-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
+                    <FaUniversity className="mx-auto text-2xl mb-2" />
+                    <p className="text-sm font-medium">Publish Programs</p>
+                  </div>
+                </Link>
               </div>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div>
-            <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Link to="/institute/applications" className="block">
-                <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
-                  <FaFileAlt className="mx-auto text-2xl mb-2" />
-                  <p className="text-sm font-medium">Applications</p>
-                </div>
-              </Link>
-              <Link to="/institute/admissions" className="block">
-                <div className="bg-gradient-to-br from-green-600 to-green-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
-                  <FaPaperPlane className="mx-auto text-2xl mb-2" />
-                  <p className="text-sm font-medium">Publish Results</p>
-                </div>
-              </Link>
-              <Link to="/institute/courses" className="block">
-                <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
-                  <FaBookOpen className="mx-auto text-2xl mb-2" />
-                  <p className="text-sm font-medium">Manage Courses</p>
-                </div>
-              </Link>
-              <Link to="/institute/faculties" className="block">
-                <div className="bg-gradient-to-br from-yellow-600 to-yellow-800 p-4 rounded-xl text-center hover:scale-105 transition-transform">
-                  <FaBuilding className="mx-auto text-2xl mb-2" />
-                  <p className="text-sm font-medium">Faculties</p>
-                </div>
-              </Link>
             </div>
           </div>
         </main>

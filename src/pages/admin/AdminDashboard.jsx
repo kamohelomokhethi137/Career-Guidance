@@ -138,23 +138,7 @@ const AdminDashboard = () => {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-6">
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <Link to="/admin/institutions" className="block">
-                  <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-4 rounded-xl text-center hover:scale-105 transition">
-                    <FaUniversity className="mx-auto text-2xl mb-2" />
-                    <p className="text-sm font-medium">Manage Institutions</p>
-                  </div>
-                </Link>
-                <Link to="/admin/users" className="block">
-                  <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-xl text-center hover:scale-105 transition">
-                    <FaUsers className="mx-auto text-2xl mb-2" />
-                    <p className="text-sm font-medium">Manage Users</p>
-                  </div>
-                </Link>
-              </div>
-            </div>
+            
 
             <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
               <h2 className="text-lg font-semibold mb-4">Platform Overview</h2>

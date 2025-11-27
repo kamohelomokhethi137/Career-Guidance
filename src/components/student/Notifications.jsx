@@ -1,73 +1,21 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaBell, FaGraduationCap, FaBriefcase, FaTrash, FaFilter } from "react-icons/fa";
-import { ToastContainer } from "react-toastify";
-import { collection, query, onSnapshot, orderBy, where } from "firebase/firestore";
+import { FaBell, FaGraduationCap, FaTrash, FaFilter } from "react-icons/fa";
+import { collection, query, onSnapshot, where, orderBy } from "firebase/firestore";
 import { db } from "../../firebase";
 import StudentSidebar from "../../components/student/Sidebar";
 import StudentTopNav from "../../components/student/TopNav";
 
-// Notification config
-const NOTIFICATION_TYPES = {
-  admission: { icon: FaGraduationCap, color: "text-blue-400", bgColor: "bg-blue-900" },
-  job: { icon: FaBriefcase, color: "text-green-400", bgColor: "bg-green-900" },
-  system: { icon: FaBell, color: "text-purple-400", bgColor: "bg-purple-900" },
-};
-
-// Helper functions
-const formatTime = (iso) => {
-  const diff = Date.now() - new Date(iso).getTime();
+const formatTime = (timestamp) => {
+  if (!timestamp) return "Recently";
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(diff / 3600000);
+  const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
-};
-
-// Components
-const FilterButton = ({ active, onClick, children }) => (
-  <button
-    onClick={onClick}
-    className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-      active ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
-    }`}
-  >
-    {children}
-  </button>
-);
-
-const NotificationItem = ({ n, onDelete }) => {
-  const { icon: Icon, color, bgColor } = NOTIFICATION_TYPES[n.type] || NOTIFICATION_TYPES.system;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 20 }}
-      className={`p-4 rounded-xl border transition-all ${
-        !n.read ? "bg-gray-900 border-blue-500" : "bg-gray-800 border-gray-700"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${bgColor}`}>
-          <Icon className={`text-lg ${color}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between mb-1">
-            <h3 className={`font-semibold ${!n.read ? "text-white" : "text-gray-300"}`}>
-              {n.title}
-            </h3>
-            <button onClick={() => onDelete(n.id)} className="text-gray-400 hover:text-red-400">
-              <FaTrash className="text-sm" />
-            </button>
-          </div>
-          <p className="text-sm text-gray-400 mb-1">{n.message}</p>
-          <div className="text-xs text-gray-500">{formatTime(n.time)}</div>
-        </div>
-      </div>
-    </motion.div>
-  );
+  return `${Math.floor(hrs / 24)}d ago`;
 };
 
 export default function Notifications() {
@@ -78,43 +26,57 @@ export default function Notifications() {
 
   // Load user
   useEffect(() => {
-    const loadUser = () => {
-      const storedUser = JSON.parse(localStorage.getItem("user") || "null");
-      if (storedUser) {
-        setUser(storedUser);
-        setUid(localStorage.getItem("uid"));
-      }
-    };
-
-    loadUser();
-    window.addEventListener("userUpdated", loadUser);
-    return () => window.removeEventListener("userUpdated", loadUser);
+    const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    if (storedUser) {
+      setUser(storedUser);
+      setUid(localStorage.getItem("uid"));
+    }
   }, []);
 
-  // Load application notifications
+  // Load application status updates
   useEffect(() => {
     if (!uid) return;
 
     const appsQuery = query(
-      collection(db, "applications"),
+      collection(db, "studentApplications"),
       where("studentId", "==", uid),
       orderBy("appliedAt", "desc")
     );
 
-    return onSnapshot(appsQuery, (snap) => {
-      const appNotifications = snap.docs.map(doc => {
+    return onSnapshot(appsQuery, (snapshot) => {
+      const appNotifications = snapshot.docs.map(doc => {
         const app = doc.data();
         
-        // Short status display
-        const status = app.status === 'approved' ? 'Approved' : 
-                      app.status === 'rejected' ? 'Rejected' : 'Applied';
+        let title = "";
+        let message = "";
         
+        switch(app.status) {
+          case "approved":
+            title = "Application Approved";
+            message = `Your application to ${app.instituteName} has been approved`;
+            break;
+          case "rejected":
+            title = "Application Not Successful";
+            message = `Your application to ${app.instituteName} was not accepted`;
+            break;
+          case "admitted":
+            title = "Admission Confirmed";
+            message = `You are now admitted to ${app.instituteName}`;
+            break;
+          default:
+            title = "Application Submitted";
+            message = `Application sent to ${app.instituteName}`;
+        }
+
         return {
           id: doc.id,
           type: "admission",
-          title: `${status}: ${app.courseName || "Course"}`,
-          message: `Your application is ${app.status}.`,
-          time: app.appliedAt?.toDate?.() || new Date(),
+          title: title,
+          message: message,
+          program: app.programTitle,
+          institute: app.instituteName,
+          time: app.appliedAt,
+          status: app.status,
           read: false,
         };
       });
@@ -124,15 +86,19 @@ export default function Notifications() {
   }, [uid]);
 
   // Filter notifications
-  const filtered = filter === "all" 
+  const filteredNotifications = filter === "all" 
     ? notifications 
-    : notifications.filter(n => filter === "admission" ? n.type === "admission" : !n.read);
+    : notifications.filter(n => n.status === filter);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const deleteNotif = (id) => setNotifications(prev => prev.filter(n => n.id !== id));
-  const clearAll = () => setNotifications([]);
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const deleteNotification = (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
 
   if (!user) {
     return (
@@ -149,56 +115,89 @@ export default function Notifications() {
     <div className="bg-black min-h-screen text-white flex">
       <StudentSidebar />
       <div className="flex-1 md:ml-64">
-        <StudentTopNav studentName={user.name || "Student"} />
+        <StudentTopNav studentName={user.fullName || "Student"} />
 
-        <main className="p-4 md:p-6 max-w-4xl mx-auto space-y-4 mt-16">
+        <main className="p-6 max-w-2xl mx-auto mt-16 space-y-4">
           {/* Header */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-xl font-bold">Notifications</h1>
-                <p className="text-gray-400 text-sm">Application updates</p>
-              </div>
-              {unreadCount > 0 && (
-                <div className="flex gap-2 items-center">
-                  <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs">
-                    {unreadCount} unread
-                  </span>
-                  <button onClick={markAllRead} className="text-blue-400 hover:text-blue-300 text-sm">
-                    Mark all read
-                  </button>
-                </div>
-              )}
+          <div className="flex justify-between items-center bg-gray-900 rounded-xl p-4">
+            <div>
+              <h1 className="text-2xl font-bold">Notifications</h1>
+              <p className="text-gray-400">Application status updates</p>
             </div>
+            {unreadCount > 0 && (
+              <button 
+                onClick={markAllRead}
+                className="text-blue-400 hover:text-blue-300 text-sm"
+              >
+                Mark all read
+              </button>
+            )}
           </div>
 
           {/* Filters */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 flex items-center gap-2">
-            <FaFilter className="text-gray-400" />
-            {["all", "unread", "admission"].map(f => (
-              <FilterButton key={f} active={filter === f} onClick={() => setFilter(f)}>
-                {f === "all" ? "All" : f === "unread" ? `Unread (${unreadCount})` : "Admissions"}
-              </FilterButton>
+          <div className="bg-gray-900 rounded-xl p-3 flex gap-2">
+            {["all", "approved", "rejected", "admitted"].map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 rounded-lg text-sm capitalize ${
+                  filter === f ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400"
+                }`}
+              >
+                {f}
+              </button>
             ))}
           </div>
 
-          {/* Notifications */}
+          {/* Notifications List */}
           <div className="space-y-3">
             <AnimatePresence>
-              {filtered.length > 0 ? (
-                filtered.map(n => (
-                  <NotificationItem key={n.id} n={n} onDelete={deleteNotif} />
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-400">
-                  No {filter === "all" ? "" : filter} notifications
-                </div>
-              )}
+              {filteredNotifications.map(notification => (
+                <motion.div
+                  key={notification.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-gray-900 rounded-xl p-4 border border-gray-800"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        notification.status === 'approved' ? 'bg-green-900' :
+                        notification.status === 'rejected' ? 'bg-red-900' :
+                        notification.status === 'admitted' ? 'bg-blue-900' : 'bg-gray-800'
+                      }`}>
+                        <FaGraduationCap className={
+                          notification.status === 'approved' ? 'text-green-400' :
+                          notification.status === 'rejected' ? 'text-red-400' :
+                          notification.status === 'admitted' ? 'text-blue-400' : 'text-gray-400'
+                        } />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-white">{notification.title}</h3>
+                        <p className="text-gray-400 text-sm">{notification.message}</p>
+                        <p className="text-gray-500 text-xs mt-1">
+                          {formatTime(notification.time)}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => deleteNotification(notification.id)}
+                      className="text-gray-400 hover:text-red-400"
+                    >
+                      <FaTrash />
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
             </AnimatePresence>
+
+            {filteredNotifications.length === 0 && (
+              <div className="text-center py-8 text-gray-400">
+                No {filter === "all" ? "" : filter} notifications
+              </div>
+            )}
           </div>
         </main>
-
-        <ToastContainer position="bottom-right" theme="dark" />
       </div>
     </div>
   );

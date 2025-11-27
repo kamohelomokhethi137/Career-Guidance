@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaClock, FaCheckCircle, FaTimesCircle, FaFileDownload, FaSpinner } from 'react-icons/fa';
+import { FaClock, FaCheckCircle, FaTimesCircle, FaFileDownload, FaSpinner, FaUniversity } from 'react-icons/fa';
 import { toast, ToastContainer } from 'react-toastify';
 import { collection, query, where, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -36,7 +36,7 @@ export default function AdmissionsResults() {
     return () => window.removeEventListener('userUpdated', loadUser);
   }, []);
 
-  // Load real-time applications data
+  // Load real-time applications data from studentApplications collection
   useEffect(() => {
     if (!uid) {
       setLoading(false);
@@ -44,7 +44,7 @@ export default function AdmissionsResults() {
     }
 
     const appsQuery = query(
-      collection(db, 'applications'),
+      collection(db, 'studentApplications'),
       where('studentId', '==', uid)
     );
 
@@ -54,47 +54,39 @@ export default function AdmissionsResults() {
           snapshot.docs.map(async (docSnap) => {
             const appData = docSnap.data();
             
-            // Fetch course details
-            let courseName = 'Unknown Course';
-            let institution = 'Unknown Institution';
-            let faculty = '';
-            let duration = '';
-            let intake = '';
+            // Fetch university application details for more context
+            let programTitle = appData.programTitle || 'Unknown Program';
+            let programDescription = '';
+            let requirements = '';
 
             try {
-              const courseDoc = await getDoc(doc(db, 'courses', appData.courseId));
-              if (courseDoc.exists()) {
-                const course = courseDoc.data();
-                courseName = course.name || 'Unknown Course';
-                faculty = course.faculty || '';
-                duration = course.duration || '';
-                intake = course.intake || '';
-                
-                // Fetch institution details
-                const instituteDoc = await getDoc(doc(db, 'institutes', appData.institute));
-                if (instituteDoc.exists()) {
-                  institution = instituteDoc.data().institutionName || 'Unknown Institution';
+              if (appData.applicationId) {
+                const universityAppDoc = await getDoc(doc(db, 'universityApplications', appData.applicationId));
+                if (universityAppDoc.exists()) {
+                  const universityApp = universityAppDoc.data();
+                  programTitle = universityApp.title || programTitle;
+                  programDescription = universityApp.description || '';
+                  requirements = universityApp.requirements || '';
                 }
               }
             } catch (error) {
-              console.error('Error fetching course/institution:', error);
+              console.error('Error fetching university application:', error);
             }
 
             return {
               id: docSnap.id,
-              courseId: appData.courseId,
-              course: courseName,
-              institution: institution,
-              faculty: faculty,
-              duration: duration,
-              intake: intake,
+              applicationId: appData.applicationId,
+              program: programTitle,
+              programDescription: programDescription,
+              institution: appData.instituteName || 'Unknown Institution',
+              programType: appData.programType || '',
+              academicLevel: appData.academicLevel || '',
               status: appData.status || 'pending',
               appliedDate: appData.appliedAt?.toDate?.() || new Date(),
               decisionDate: appData.updatedAt?.toDate?.() || null,
               admissionLetter: appData.admissionLetter || null,
-              requirements: appData.requirements || [],
-              deadline: appData.deadline || null,
-              studentResponse: appData.studentResponse || null // 'accepted' or 'declined'
+              requirements: requirements,
+              studentResponse: appData.studentResponse || null
             };
           })
         );
@@ -119,12 +111,12 @@ export default function AdmissionsResults() {
     if (!uid) return toast.error('User not logged in');
 
     try {
-      await updateDoc(doc(db, 'applications', application.id), {
+      await updateDoc(doc(db, 'studentApplications', application.id), {
         studentResponse: 'accepted',
         respondedAt: new Date(),
-        status: 'admitted' // Update status to admitted when student accepts
+        status: 'admitted'
       });
-      toast.success(`🎉 Congratulations! You've accepted the offer for ${application.course}!`);
+      toast.success('Congratulations. You have accepted the offer for ' + application.program);
     } catch (error) {
       console.error('Error accepting offer:', error);
       toast.error('Failed to accept offer. Please try again.');
@@ -135,11 +127,11 @@ export default function AdmissionsResults() {
     if (!uid) return toast.error('User not logged in');
 
     try {
-      await updateDoc(doc(db, 'applications', application.id), {
+      await updateDoc(doc(db, 'studentApplications', application.id), {
         studentResponse: 'declined',
         respondedAt: new Date()
       });
-      toast.info(`Offer declined for ${application.course}.`);
+      toast.info('Offer declined for ' + application.program);
     } catch (error) {
       console.error('Error declining offer:', error);
       toast.error('Failed to decline offer. Please try again.');
@@ -148,18 +140,18 @@ export default function AdmissionsResults() {
 
   const handleDownloadLetter = (application) => {
     if (application.admissionLetter) {
-      // Simulate download - replace with actual file download logic
       window.open(application.admissionLetter, '_blank');
-      toast.info('Downloading admission letter...');
+      toast.info('Downloading admission letter');
     } else {
-      toast.warning('Admission letter not available yet.');
+      toast.warning('Admission letter not available yet');
     }
   };
 
-  // Check if student is admitted to any course
+  // Check if student is admitted to any program
   const isAdmitted = applications.some(app => app.status === 'admitted');
   const approvedApplications = applications.filter(app => app.status === 'approved');
   const admittedApplications = applications.filter(app => app.status === 'admitted');
+  const rejectedApplications = applications.filter(app => app.status === 'rejected');
 
   if (!user) {
     return (
@@ -177,7 +169,7 @@ export default function AdmissionsResults() {
       <StudentSidebar />
 
       <div className="flex-1 md:ml-64">
-        <StudentTopNav studentName={user.name || 'Student'} />
+        <StudentTopNav studentName={user.fullName || user.name || 'Student'} />
 
         <main className="pt-20 px-4 md:px-8 lg:px-12 space-y-6">
           {/* Header with admission status */}
@@ -188,15 +180,15 @@ export default function AdmissionsResults() {
                   Admissions Results
                 </h1>
                 <p className="text-white/70">
-                  Track the status of your course applications and view admission decisions.
+                  Track the status of your university applications and view admission decisions.
                 </p>
               </div>
               
               {isAdmitted && (
                 <div className="mt-4 md:mt-0">
                   <div className="bg-green-900 border border-green-700 rounded-lg px-4 py-2">
-                    <p className="text-green-400 font-semibold">🎉 You've been admitted!</p>
-                    <p className="text-green-300 text-sm">Congratulations on your acceptance!</p>
+                    <p className="text-green-400 font-semibold">You have been admitted</p>
+                    <p className="text-green-300 text-sm">Congratulations on your acceptance</p>
                   </div>
                 </div>
               )}
@@ -216,19 +208,26 @@ export default function AdmissionsResults() {
                   {admittedApplications.length} admitted
                 </div>
               )}
+              {rejectedApplications.length > 0 && (
+                <div className="text-red-400">
+                  {rejectedApplications.length} rejected
+                </div>
+              )}
             </div>
           </div>
 
           {loading ? (
             <div className="flex justify-center items-center py-12">
               <FaSpinner className="animate-spin text-4xl text-blue-400" />
+              <span className="ml-3">Loading applications...</span>
             </div>
           ) : applications.length === 0 ? (
             <div className="text-center py-12 bg-gray-900 rounded-2xl border border-gray-800">
+              <FaUniversity className="text-6xl mx-auto mb-4 text-gray-600" />
               <h3 className="text-lg font-semibold text-white mb-2">No Applications Found</h3>
-              <p className="text-white/70">You haven't applied to any courses yet.</p>
-              <a href="/student/courses" className="text-blue-400 hover:text-blue-300 mt-2 inline-block">
-                Browse Courses
+              <p className="text-white/70">You have not applied to any university programs yet.</p>
+              <a href="/student/university-applications" className="text-blue-400 hover:text-blue-300 mt-2 inline-block">
+                Browse University Programs
               </a>
             </div>
           ) : (
@@ -244,6 +243,8 @@ export default function AdmissionsResults() {
                       ? 'border-green-700 bg-green-900/20' 
                       : application.status === 'approved'
                       ? 'border-blue-700'
+                      : application.status === 'rejected'
+                      ? 'border-red-700 bg-red-900/20'
                       : 'border-gray-800'
                   }`}
                 >
@@ -251,11 +252,20 @@ export default function AdmissionsResults() {
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <h3 className="text-lg font-semibold text-white">{application.course}</h3>
+                          <h3 className="text-lg font-semibold text-white">{application.program}</h3>
                           <p className="text-blue-400">{application.institution}</p>
-                          {application.faculty && (
-                            <p className="text-white/60 text-sm">Faculty: {application.faculty}</p>
-                          )}
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {application.programType && (
+                              <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded capitalize">
+                                {application.programType}
+                              </span>
+                            )}
+                            {application.academicLevel && (
+                              <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded">
+                                {application.academicLevel}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <StatusBadge status={application.status} />
                       </div>
@@ -276,21 +286,14 @@ export default function AdmissionsResults() {
                       {/* Show different content based on status */}
                       {application.status === 'approved' && (
                         <div className="mb-4">
-                          <h4 className="text-sm font-medium text-white mb-2">🎉 You've been approved!</h4>
+                          <h4 className="text-sm font-medium text-white mb-2">You have been approved</h4>
                           <p className="text-white/70 text-sm mb-2">
-                            Congratulations! Your application has been approved. Please respond to this offer.
+                            Congratulations. Your application has been approved. Please respond to this offer.
                           </p>
-                          {application.requirements.length > 0 && (
+                          {application.requirements && (
                             <>
-                              <h4 className="text-sm font-medium text-white mb-2">Next Steps:</h4>
-                              <ul className="space-y-1 text-white/70">
-                                {application.requirements.map((req, idx) => (
-                                  <li key={idx} className="flex items-center text-sm">
-                                    <span className="text-green-400 mr-2">•</span>
-                                    {req} {application.deadline && idx === 0 && `(Deadline: ${new Date(application.deadline).toLocaleDateString()})`}
-                                  </li>
-                                ))}
-                              </ul>
+                              <h4 className="text-sm font-medium text-white mb-2">Requirements:</h4>
+                              <p className="text-white/70 text-sm">{application.requirements}</p>
                             </>
                           )}
                         </div>
@@ -298,23 +301,25 @@ export default function AdmissionsResults() {
 
                       {application.status === 'admitted' && (
                         <div className="mb-4">
-                          <h4 className="text-sm font-medium text-white mb-2">🎊 You're Admitted!</h4>
+                          <h4 className="text-sm font-medium text-white mb-2">You are Admitted</h4>
                           <p className="text-green-400 text-sm mb-2">
-                            Welcome! You've accepted the offer and are now admitted to this program.
+                            Welcome. You have accepted the offer and are now admitted to this program.
                           </p>
-                          {application.requirements.length > 0 && (
+                          {application.requirements && (
                             <>
-                              <h4 className="text-sm font-medium text-white mb-2">Next Steps:</h4>
-                              <ul className="space-y-1 text-white/70">
-                                {application.requirements.map((req, idx) => (
-                                  <li key={idx} className="flex items-center text-sm">
-                                    <span className="text-green-400 mr-2">•</span>
-                                    {req} {application.deadline && idx === 0 && `(Deadline: ${new Date(application.deadline).toLocaleDateString()})`}
-                                  </li>
-                                ))}
-                              </ul>
+                              <h4 className="text-sm font-medium text-white mb-2">Requirements:</h4>
+                              <p className="text-white/70 text-sm">{application.requirements}</p>
                             </>
                           )}
+                        </div>
+                      )}
+
+                      {application.status === 'rejected' && (
+                        <div className="mb-4">
+                          <h4 className="text-sm font-medium text-white mb-2">Application Not Successful</h4>
+                          <p className="text-red-400 text-sm">
+                            Your application has been reviewed and was not accepted for this program.
+                          </p>
                         </div>
                       )}
 
@@ -373,7 +378,14 @@ export default function AdmissionsResults() {
                       {/* Show admitted status */}
                       {application.status === 'admitted' && (
                         <button className="bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-default">
-                          🎉 Admitted
+                          Admitted
+                        </button>
+                      )}
+
+                      {/* Show rejected status */}
+                      {application.status === 'rejected' && (
+                        <button className="bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-default">
+                          Not Accepted
                         </button>
                       )}
                     </div>

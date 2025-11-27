@@ -163,23 +163,7 @@ const CompanyDashboard = () => {
               </div>
             </div>
 
-            <div>
-              <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <Link to="/company/post-job" className="block">
-                  <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-xl text-center hover:scale-105 transition">
-                    <FaBriefcase className="mx-auto text-2xl mb-2" />
-                    <p className="text-sm font-medium">Post Job</p>
-                  </div>
-                </Link>
-                <Link to="/company/applications" className="block">
-                  <div className="bg-gradient-to-br from-green-600 to-green-800 p-4 rounded-xl text-center hover:scale-105 transition">
-                    <FaUsers className="mx-auto text-2xl mb-2" />
-                    <p className="text-sm font-medium">View Applicants</p>
-                  </div>
-                </Link>
-              </div>
-            </div>
+         
           </div>
         </main>
 

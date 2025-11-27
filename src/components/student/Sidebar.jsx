@@ -15,7 +15,7 @@ const Sidebar = () => {
 
   const navItems = [
     { name: "Dashboard", icon: <FaHome />, path: "/student/dashboard" },
-    { name: "Course Applications", icon: <FaGraduationCap />, path: "/student/courses" },
+    { name: "Applications", icon: <FaGraduationCap />, path: "/student/courses" },
     { name: "Admissions Results", icon: <FaCheckCircle />, path: "/student/admissions" },
     { name: "Upload Documents", icon: <FaFileUpload />, path: "/student/documents" },
     { name: "Job Opportunities", icon: <FaBriefcase />, path: "/student/jobs" },
